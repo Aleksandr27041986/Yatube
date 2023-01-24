@@ -1,0 +1,25 @@
+{% extends 'base.html'%}
+{% load cache %}
+{% block title %}
+  Последние обновления на сайте
+{% endblock %}
+{% block content %}
+  <!-- класс py-5 создает отступы сверху и снизу блока -->
+  <div class="container py-5">     
+    <h1>Последние обновления на сайте</h1>
+    <article>
+      {% include 'posts/includes/switcher.html' %}
+      {% cache 20 index_page %}
+        {% for post in page_obj %}
+          {% include 'includes/post.html' %}    
+          {% if post.group %}   
+            <a href="{% url 'posts:group_list' post.group.slug %}">все записи группы</a>
+          {% endif %} 
+          {% if not forloop.last %}<hr>{% endif %}
+        {% endfor %} 
+      {% endcache %}
+      {% include 'posts/includes/paginator.html' %}
+    </article>
+    <!-- под последним постом нет линии -->
+  </div>  
+{% endblock %}
