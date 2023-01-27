@@ -8,7 +8,7 @@ User = get_user_model()
 
 class UserPagesTests(TestCase):
     def setUp(self) -> None:
-        self.guest_client = Client()
+        self.guest = Client()
 
     def test_signup_page_show_correct_context(self):
         """
@@ -23,7 +23,7 @@ class UserPagesTests(TestCase):
             'password1': forms.fields.CharField,
             'password2': forms.fields.CharField,
         }
-        response = self.guest_client.get(reverse('users:signup'))
+        response = self.guest.get(reverse('users:signup'))
         for field, expected in form_fields.items():
             with self.subTest(field=field):
                 form_field = response.context['form'].fields[field]

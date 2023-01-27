@@ -2,8 +2,9 @@ from http import HTTPStatus
 from django.test import Client, TestCase
 from django.contrib.auth import get_user_model
 from django.urls import reverse
-from posts.models import Post, Group
+from posts.models import Post
 from django.core.cache import cache
+from .factories import post_create, group_create
 
 User = get_user_model()
 
@@ -11,8 +12,8 @@ User = get_user_model()
 class StaticURLTests(TestCase):
     """Проверяем главную страницу."""
     def test_homepage(self):
-        guest_client = Client()
-        response = guest_client.get('/')
+        guest = Client()
+        response = guest.get('/')
         self.assertEqual(response.status_code, 200)
 
 
@@ -20,29 +21,21 @@ class PostURLTests(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='user')
-        cls.user_2 = User.objects.create_user(username='author')
-        cls.group = Group.objects.create(
-            title='Просто группа',
-            slug='prosto-slug',
-            description='Описание просто группы',
-        )
-        cls.post = Post.objects.create(
-            author=cls.user_2,
-            text='Новый пост сделанный author',
-            group=cls.group
-        )
+        cls.subscrib_user = User.objects.create_user('subscriber')
+        cls.author_user = User.objects.create_user('author')
+        cls.group = group_create()
+        cls.post = post_create(cls.author_user, cls.group)
 
     def setUp(self):
-        self.authorized_client = Client()
-        self.authorized_client.force_login(self.user)
+        self.subscriber = Client()
+        self.subscriber.force_login(self.subscrib_user)
         self.author = Client()
-        self.author.force_login(self.user_2)
-        self.guest_client = Client()
+        self.author.force_login(self.author_user)
+        self.guest = Client()
         self.reverse_pages_name = [
             reverse('posts:index'),
             reverse('posts:group_list', kwargs={'slug': self.group.slug}),
-            reverse('posts:profile', kwargs={'username': self.user}),
+            reverse('posts:profile', kwargs={'username': self.subscrib_user}),
             reverse('posts:post_detail', kwargs={'post_id': self.post.id}),
             reverse('posts:post_edit', kwargs={'post_id': self.post.id}),
             reverse('posts:post_create'),
@@ -57,6 +50,7 @@ class PostURLTests(TestCase):
             'posts/create_post.html',
             'posts/follow.html',
         ]
+        cache.clear()
 
     def test_url_available_anonymous_exists_at_desired_location(self):
         """
@@ -67,7 +61,7 @@ class PostURLTests(TestCase):
         """
         for address in self.reverse_pages_name:
             with self.subTest(address=address):
-                response = self.guest_client.get(address)
+                response = self.guest.get(address)
                 if response.status_code == HTTPStatus.FOUND.value:
                     redirect_url = f'/auth/login/?next={address}'
                     self.assertRedirects(response, redirect_url)
@@ -83,7 +77,7 @@ class PostURLTests(TestCase):
         """
         for address in self.reverse_pages_name:
             with self.subTest(address=address):
-                response = self.authorized_client.get(address)
+                response = self.subscriber.get(address)
                 if response.status_code == HTTPStatus.FOUND.value:
                     redirect_url = reverse('posts:post_detail',
                                            kwargs={'post_id': self.post.id})
@@ -101,7 +95,7 @@ class PostURLTests(TestCase):
     def test_unexisting_page_return_error(self):
         """Запрос к несуществующей странице возвращает ошибку 404 и
         обрабатывает кастомный шаблон."""
-        response = self.guest_client.get('/unexisting_page/')
+        response = self.guest.get('/unexisting_page/')
         self.assertEqual(response.status_code, HTTPStatus.NOT_FOUND.value)
         self.assertTemplateUsed(response, 'core/404.html')
 
@@ -113,7 +107,7 @@ class PostURLTests(TestCase):
         url = [
             '/',
             f'/group/{self.group.slug}/',
-            f'/profile/{self.user}/',
+            f'/profile/{self.subscrib_user}/',
             f'/posts/{self.post.id}/',
             f'/posts/{self.post.id}/edit/',
             '/create/',
@@ -138,7 +132,7 @@ class PostURLTests(TestCase):
         пользователю, он будет переадресован на страницу авторизации.
         """
         url = reverse('posts:add_comment', kwargs={'post_id': self.post.id})
-        response_guest = self.guest_client.get(url)
+        response_guest = self.guest.get(url)
         redirect_url = f'/auth/login/?next={url}'
         self.assertRedirects(response_guest, redirect_url)
 
@@ -148,9 +142,8 @@ class PostURLTests(TestCase):
         сохраняется в кэш, при повторном запросе инфомация загружается из кэша.
         """
         def response(page):
-            return self.guest_client.get(page)
+            return self.guest.get(page)
         index = reverse('posts:index')
-        cache.clear()
         response_1 = response(index)
         Post.objects.all().delete()
         response_with_cache = response(index)

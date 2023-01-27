@@ -10,7 +10,7 @@ class UserURLTest(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.guest_client = Client()
+        cls.guest = Client()
         cls.url = [
             '/auth/signup/',
             '/auth/login/',
@@ -47,9 +47,9 @@ class UserURLTest(TestCase):
         ]
 
     def setUp(self) -> None:
-        self.user = User.objects.create_user(username='user')
-        self.authorized_client = Client()
-        self.authorized_client.force_login(self.user)
+        self.subscr_user = User.objects.create_user('subscriber')
+        self.subscriber = Client()
+        self.subscriber.force_login(self.subscr_user)
 
     def test_reverse(self):
         """
@@ -70,7 +70,7 @@ class UserURLTest(TestCase):
         # и перебираем их в цикле проверяя соответствие
         for reverse_name, template in zip(self.reverses_names, self.templates):
             with self.subTest(reverse_name=reverse_name):
-                response = self.authorized_client.get(reverse_name)
+                response = self.subscriber.get(reverse_name)
                 self.assertTemplateUsed(response, template)
 
     def test_url_available_authorized_exists_at_desired_location(self):
@@ -79,7 +79,7 @@ class UserURLTest(TestCase):
         """
         for reverse_name in self.reverses_names:
             with self.subTest(reverse_name=reverse_name):
-                response = self.authorized_client.get(reverse_name)
+                response = self.subscriber.get(reverse_name)
                 self.assertEqual(response.status_code, HTTPStatus.OK.value)
 
     def test_url_available_anonymous_exists_at_desired_location(self):
@@ -90,7 +90,7 @@ class UserURLTest(TestCase):
         """
         for reverse_name in self.reverses_names:
             with self.subTest(reverse_name=reverse_name):
-                response = self.guest_client.get(reverse_name)
+                response = self.guest.get(reverse_name)
                 if response.status_code == HTTPStatus.FOUND.value:
                     redirect_url = f'/auth/login/?next={reverse_name}'
                     self.assertRedirects(response, redirect_url)
@@ -99,5 +99,5 @@ class UserURLTest(TestCase):
 
     def test_unexisting_page_return_error(self):
         """Запрос к несуществующей странице возвращает ошибку."""
-        response = self.guest_client.get('/auth/unexisting_page/')
+        response = self.guest.get('/auth/unexisting_page/')
         self.assertEqual(response.status_code, 404)

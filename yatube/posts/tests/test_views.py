@@ -7,8 +7,9 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django import forms
 from posts.forms import PostForm
+from .factories import post_create, group_create, clean_counter
 
-from posts.models import Post, Group, Follow
+from posts.models import Follow
 
 User = get_user_model()
 TEMP_MEDIA_ROOT = tempfile.mkdtemp(dir=settings.TEST_DIR)
@@ -19,8 +20,8 @@ class PostPagesTests(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.user = User.objects.create_user(username='автор')
-        cls.user_2 = User.objects.create_user(username='пользователь')
+        cls.author_user = User.objects.create_user('author')
+        cls.subscrib_user = User.objects.create_user('subscriber')
         cls.small_gif = (
             b'\x47\x49\x46\x38\x39\x61\x02\x00'
             b'\x01\x00\x80\x00\x00\x00\x00\x00'
@@ -34,37 +35,25 @@ class PostPagesTests(TestCase):
             content=cls.small_gif,
             content_type='image/gif'
         )
-        cls.group = Group.objects.create(
-            title='Просто группа',
-            slug='prosto-slug',
-            description='Описание просто группы',
-        )
-        cls.post = Post.objects.create(
-            author=cls.user,
-            text='Новый пост',
-            group=cls.group,
-            image=cls.uploaded
-        )
+        cls.group = group_create()
+        cls.post = post_create(cls.author_user, cls.group, cls.uploaded)
 
     @classmethod
     def tearDownClass(cls) -> None:
         super().tearDownClass()
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+        clean_counter()
 
     def setUp(self) -> None:
-        self.authorized_client = Client()
-        self.authorized_client.force_login(self.user_2)
+        self.subscriber = Client()
+        self.subscriber.force_login(self.subscrib_user)
         self.author = Client()
-        self.author.force_login(self.user)
-        self.user_unfollowed = User.objects.create_user(username='Безподписки')
-        self.unfollowed_client = Client()
-        self.unfollowed_client.force_login(self.user_unfollowed)
-        self.group_2 = Group.objects.create(
-            title='Вторая группа',
-            slug='slug_2',
-            description='Группа без постов',
-        )
-        self.guest_client = Client()
+        self.author.force_login(self.author_user)
+        self.unfollowed_user = User.objects.create_user('Unfollowed')
+        self.unfollowed = Client()
+        self.unfollowed.force_login(self.unfollowed_user)
+        self.group_2 = group_create()
+        self.guest = Client()
 
     def comparing_responsed_and_expected_quantity(self, client, url, quantity):
         """Функция сравнения количество постов из запроса с ожидаемым
@@ -80,16 +69,16 @@ class PostPagesTests(TestCase):
         """
         reverses_names = [
             reverse('posts:index'),
-            reverse('posts:group_list', args=(self.post.group.slug,)),
-            reverse('posts:profile', kwargs={'username': self.user}),
+            reverse('posts:group_list', kwargs={'slug': self.group.slug}),
+            reverse('posts:profile', kwargs={'username': self.author_user}),
         ]
         for reverse_name in reverses_names:
             with self.subTest(reverse_name=reverse_name):
                 response = self.author.get(reverse_name)
                 post = response.context['page_obj'][0]
-                self.assertEqual(post.author.username, 'автор')
-                self.assertEqual(post.text, 'Новый пост')
-                self.assertEqual(post.group.title, 'Просто группа')
+                self.assertEqual(post.author.username, 'author')
+                self.assertEqual(post.text, 'post1')
+                self.assertEqual(post.group.title, 'Группа1')
                 self.assertEqual(post.image, 'posts/small.gif')
 
     def test_post_detail_page_contains_post_group_author(self):
@@ -99,11 +88,11 @@ class PostPagesTests(TestCase):
         и авторе поста.
         """
         url = reverse('posts:post_detail', kwargs={'post_id': self.post.id})
-        response = self.authorized_client.get(url)
+        response = self.subscriber.get(url)
         post = response.context.get('post')
-        self.assertEqual(post.author.username, 'автор')
-        self.assertEqual(post.text, 'Новый пост')
-        self.assertEqual(post.group.title, 'Просто группа')
+        self.assertEqual(post.author.username, 'author')
+        self.assertEqual(post.text, 'post1')
+        self.assertEqual(post.group.title, 'Группа1')
         self.assertEqual(post.image, 'posts/small.gif')
 
     def create_post_contains_fields_required_type(self, response):
@@ -149,7 +138,7 @@ class PostPagesTests(TestCase):
             reverse('posts:group_list', kwargs={'slug': self.group.slug}): 1,
             reverse('posts:group_list', kwargs={'slug': self.group_2.slug}): 0,
             reverse('posts:index'): 1,
-            reverse('posts:profile', kwargs={'username': self.user}): 1,
+            reverse('posts:profile', kwargs={'username': self.author_user}): 1,
         }
         for reverse_name, quentity_post in responses_list.items():
             with self.subTest(reverse_name=reverse_name):
@@ -170,13 +159,13 @@ class PostPagesTests(TestCase):
                              kwargs={'username': self.post.author})
         # проверяем наличие фолловера автора после подписки,
         # и отсутствие после отписки
-        self.authorized_client.get(create_url)
+        self.subscriber.get(create_url)
         self.assertTrue(
-            User.objects.filter(follower__author__username='автор')
+            User.objects.filter(follower__author__username='author')
         )
-        self.authorized_client.get(delete_url)
+        self.subscriber.get(delete_url)
         self.assertFalse(
-            User.objects.filter(follower__author__username='автор')
+            User.objects.filter(follower__author__username='author')
         )
 
     def test_new_post_add_in_follower_page(self):
@@ -186,23 +175,19 @@ class PostPagesTests(TestCase):
         кто не подписан.
         """
         url = reverse('posts:follow_index')
-        Follow.objects.create(user=self.user_2, author=self.post.author)
-        user_with_fol = self.authorized_client
-        user_unfol = self.unfollowed_client
+        Follow.objects.create(user=self.subscrib_user, author=self.post.author)
+        user_with_fol = self.subscriber
+        user_unfol = self.unfollowed
         # сравниваем количество до добавления нового поста
         self.comparing_responsed_and_expected_quantity(user_with_fol, url, 1)
         self.comparing_responsed_and_expected_quantity(user_unfol, url, 0)
-        Post.objects.create(
-            author=self.user,
-            text='Второй пост',
-            group=self.group,
-        )
+        post_create(self.author_user, self.group)
         # сравниваем количество записей после добавления нового поста
         self.comparing_responsed_and_expected_quantity(user_with_fol, url, 2)
         self.comparing_responsed_and_expected_quantity(user_unfol, url, 0)
-        response = self.authorized_client.get(url)
+        response = self.subscriber.get(url)
         post = response.context['page_obj'][0]
-        self.assertEqual(post.text, 'Второй пост')
+        self.assertEqual(post.text, 'post2')
 
     def test_follow_page_contains_post_group_author(self):
         """"
@@ -211,12 +196,12 @@ class PostPagesTests(TestCase):
         """
         create_url = reverse('posts:profile_follow',
                              kwargs={'username': self.post.author})
-        self.authorized_client.get(create_url)
-        response = self.authorized_client.get(reverse('posts:follow_index'))
+        self.subscriber.get(create_url)
+        response = self.subscriber.get(reverse('posts:follow_index'))
         post = response.context['page_obj'][0]
-        self.assertEqual(post.author.username, 'автор')
-        self.assertEqual(post.text, 'Новый пост')
-        self.assertEqual(post.group.title, 'Просто группа')
+        self.assertEqual(post.author.username, 'author')
+        self.assertEqual(post.text, 'post1')
+        self.assertEqual(post.group.title, 'Группа1')
         self.assertEqual(post.image, 'posts/small.gif')
 
 
@@ -224,22 +209,13 @@ class PaginatorViewsTest(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.user = User.objects.create_user(username='автор')
-        cls.authorized_client = Client()
-        cls.authorized_client.force_login(cls.user)
-        cls.group = Group.objects.create(
-            title='Просто группа',
-            slug='prosto_slug',
-            description='Описание просто группы',
-        )
-        cls.post = []
+        cls.author_user = User.objects.create_user('author')
+        cls.author = Client()
+        cls.author.force_login(cls.author_user)
+        cls.group = group_create()
         for i in range(13):
-            cls.post.append(Post(
-                text=f'Пост {i}',
-                group=cls.group,
-                author=cls.user,
-            ))
-        Post.objects.bulk_create(cls.post)
+            post_create(cls.author_user, cls.group)
+        clean_counter()
 
     def test_first_page_contains_ten_records(self):
         """
@@ -249,11 +225,11 @@ class PaginatorViewsTest(TestCase):
         reverses_names = [
             reverse('posts:index'),
             reverse('posts:group_list', kwargs={'slug': self.group.slug}),
-            reverse('posts:profile', kwargs={'username': self.user}),
+            reverse('posts:profile', kwargs={'username': self.author_user}),
         ]
         for reverse_name in reverses_names:
             with self.subTest(reverse_name=reverse_name):
-                response = self.authorized_client.get(reverse_name + "")
+                response = self.author.get(reverse_name + "")
                 self.assertEqual(len(response.context['page_obj']), 10)
 
     def test_second_page_contains_three_records(self):
@@ -264,9 +240,9 @@ class PaginatorViewsTest(TestCase):
         reverses_names = [
             reverse('posts:index'),
             reverse('posts:group_list', kwargs={'slug': self.group.slug}),
-            reverse('posts:profile', kwargs={'username': self.user}),
+            reverse('posts:profile', kwargs={'username': self.author_user}),
         ]
         for reverse_name in reverses_names:
             with self.subTest(reverse_name=reverse_name):
-                response = self.authorized_client.get(reverse_name + '?page=2')
+                response = self.author.get(reverse_name + '?page=2')
                 self.assertEqual(len(response.context['page_obj']), 3)

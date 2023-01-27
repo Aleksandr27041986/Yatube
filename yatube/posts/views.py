@@ -18,7 +18,7 @@ def paginator(request, posts):
 
 def index(request):
     # Главная страница
-    post_list = Post.objects.all()
+    post_list = Post.objects.select_related('author', 'group').all()
     page_obj = paginator(request, post_list)
     context = {
         'page_obj': page_obj
@@ -29,7 +29,7 @@ def index(request):
 def group_posts(request, slug):
     # Страница сообществ
     group = get_object_or_404(Group, slug=slug)
-    group_list = group.posts.all()
+    group_list = group.posts.select_related('author', 'group').all()
     page_obj = paginator(request, group_list)
     title = str(group)
     context = {
@@ -46,7 +46,10 @@ def profile(request, username):
     is_profile = True
     author = get_object_or_404(User, username=username)
     user = request.user
-    post_list = Post.objects.filter(author=author)
+    post_list = Post.objects.filter(author=author).select_related(
+        'group',
+        'author',
+    )
     count = post_list.count()
     page_obj = paginator(request, post_list)
     following = (
@@ -64,9 +67,12 @@ def profile(request, username):
 
 def post_detail(request, post_id):
     # Старица поста
-    post = get_object_or_404(Post, pk=post_id)
+    post = get_object_or_404(
+        Post.objects.select_related('author', 'group'),
+        pk=post_id
+    )
     count = post.author.posts.count()
-    comments = post.comments.all
+    comments = post.comments.select_related('author', 'post').all()
     form = CommentForm()
     context = {
         'post': post,
@@ -137,10 +143,8 @@ def add_comment(request, post_id):
 
 @login_required
 def follow_index(request):
-    following = Follow.objects.filter(user=request.user).values_list(
-        'author_id', flat=True
-    )
-    post_list = Post.objects.filter(author_id__in=following)
+    post_list = Post.objects.select_related('author', 'group').filter(
+        author__following__user=request.user)
     page_obj = paginator(request, post_list)
     context = {
         'page_obj': page_obj,
@@ -151,9 +155,8 @@ def follow_index(request):
 @login_required
 def profile_follow(request, username):
     author = get_object_or_404(User, username=username)
-    following = author.following.filter(user_id=request.user.id)
-    if request.user != author and not following:
-        Follow.objects.create(user=request.user, author=author)
+    if request.user != author:
+        Follow.objects.get_or_create(user=request.user, author=author)
     return redirect('posts:follow_index')
 
 

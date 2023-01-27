@@ -8,7 +8,7 @@ User = get_user_model()
 
 class UserCreateFromTests(TestCase):
     def setUp(self) -> None:
-        self.guest_client = Client()
+        self.guest = Client()
 
     def test_create_user(self):
         """
@@ -24,7 +24,7 @@ class UserCreateFromTests(TestCase):
             'password1': 'Itcnfrjd36',
             'password2': 'Itcnfrjd36'
         }
-        response = self.guest_client.post(
+        response = self.guest.post(
             reverse('users:signup'),
             data=form_data,
             follow=True

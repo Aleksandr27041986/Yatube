@@ -6,7 +6,9 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.conf import settings
 from posts.forms import PostForm
-from posts.models import Post, Group, Comment
+from posts.models import Post, Comment
+from django.core.cache import cache
+from .factories import post_create, group_create, clean_counter
 
 
 User = get_user_model()
@@ -18,27 +20,21 @@ class PostFormTests(TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
-        cls.user = User.objects.create_user(username='user')
-        cls.group = Group.objects.create(
-            title='Группа',
-            slug='slug',
-            description='Описание группы',
-        )
-        cls.post = Post.objects.create(
-            author=cls.user,
-            text='Первоначальный текс',
-            group=cls.group
-        )
+        cls.author_user = User.objects.create_user('author')
+        cls.group = group_create()
+        cls.post = post_create(cls.author_user, cls.group)
         cls.form = PostForm()
 
     @classmethod
     def tearDownClass(cls) -> None:
         super().tearDownClass()
         shutil.rmtree(TEMP_MEDIA_ROOT, ignore_errors=True)
+        clean_counter()
 
     def setUp(self) -> None:
-        self.authurized_client = Client()
-        self.authurized_client.force_login(self.user)
+        self.author = Client()
+        self.author.force_login(self.author_user)
+        cache.clear()
 
     def test_create_post(self):
         """
@@ -63,16 +59,17 @@ class PostFormTests(TestCase):
         posts_count = Post.objects.count()
         form_data = {
             'text': 'Созданный пост',
-            'author': self.user,
+            'author': self.author_user,
             'group': self.group.id,
             'image': uploaded,
         }
-        response = self.authurized_client.post(
+        response = self.author.post(
             reverse('posts:post_create'),
             data=form_data,
             follow=True
         )
-        redirect_url = reverse('posts:profile', kwargs={'username': self.user})
+        redirect_url = reverse('posts:profile',
+                               kwargs={'username': self.author_user})
         self.assertRedirects(response, redirect_url)
         self.assertEqual(Post.objects.count(), posts_count + 1)
         self.assertTrue(Post.objects.filter(
@@ -89,10 +86,10 @@ class PostFormTests(TestCase):
         posts_count = Post.objects.count()
         form_data = {
             'text': 'Изменённый текст',
-            'author': self.user,
+            'author': self.author_user,
             'group': self.group.id
         }
-        response = self.authurized_client.post(
+        response = self.author.post(
             reverse('posts:post_edit', kwargs={'post_id': self.post.id}),
             data=form_data,
             follow=True
@@ -114,11 +111,11 @@ class PostFormTests(TestCase):
                                kwargs={'post_id': self.post.id})
         form_data = {
             'post': self.post.id,
-            'author': self.user,
+            'author': self.author_user,
             'text': 'Комментарий к посту',
         }
         comments_count = Comment.objects.filter(post=self.post.id).count()
-        response = self.authurized_client.post(
+        response = self.author.post(
             url,
             data=form_data,
             follow=True

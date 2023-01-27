@@ -1,6 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from ..models import Post, Group
+from ..models import Post
+from .factories import post_create, group_create, clean_counter
 
 User = get_user_model()
 
@@ -9,34 +10,30 @@ class PostModelTest(TestCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.user = User.objects.create_user(username='auth')
-        cls.group = Group.objects.create(
-            title='Просто группа',
-            slug='prosto_slug',
-            description='Описание просто группы',
-        )
-        cls.post = Post.objects.create(
-            author=cls.user,
-            text='Короткий пост',
-        )
+        cls.author = User.objects.create_user('author')
+        cls.group = group_create()
+        cls.post = post_create(cls.author, cls.group)
         cls.long_post = Post.objects.create(
-            author=cls.user,
+            author=cls.author,
             text='Не более 15 символов может уместиться в превью'
         )
 
-    def test_models_have_correct_object_names(self):
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()
+        clean_counter()
+
+    def test_models_have_correct_post_names(self):
         """
         У модели Post метод __str__ выводит текст поста сокращённый до
-        15 символов, у модели Group выводится название группы.
+        15 символов.
         """
-        objects_names = {
-            PostModelTest.post: 'Короткий пост',
-            PostModelTest.long_post: 'Не более 15 сим',
-            PostModelTest.group: 'Просто группа',
-        }
-        for object, object_name in objects_names.items():
-            with self.subTest(object=object):
-                self.assertEqual(str(object), object_name)
+        self.assertEqual(str(self.post), 'post1')
+        self.assertEqual(str(self.long_post), 'Не более 15 сим')
+
+    def test_models_have_correct_group_names(self):
+        """У модели Post метод __str__ выводит наименование группы."""
+        self.assertEqual(str(self.group), 'Группа1')
 
     def test_post_verbose_name(self):
         """verbose_name полей модели Post совпадает с ожидаемым."""
