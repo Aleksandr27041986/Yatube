@@ -36,6 +36,7 @@ class PostPagesTests(TestCase):
             content_type='image/gif'
         )
         cls.group = group_create()
+        cls.group_2 = group_create()
         cls.post = post_create(cls.author_user, cls.group, cls.uploaded)
 
     @classmethod
@@ -52,7 +53,6 @@ class PostPagesTests(TestCase):
         self.unfollowed_user = User.objects.create_user('Unfollowed')
         self.unfollowed = Client()
         self.unfollowed.force_login(self.unfollowed_user)
-        self.group_2 = group_create()
         self.guest = Client()
 
     def comparing_responsed_and_expected_quantity(self, client, url, quantity):

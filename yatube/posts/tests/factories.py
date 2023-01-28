@@ -1,4 +1,3 @@
-from django.urls import reverse
 from posts.models import Post, Group
 
 _counter_post = 0
@@ -37,10 +36,6 @@ def group_create():
         slug=slug,
         description=description
     )
-
-
-def url_rev(url, **args):
-    return reverse(url, args=args)
 
 
 def clean_counter():

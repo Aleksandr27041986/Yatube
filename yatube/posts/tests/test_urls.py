@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from posts.models import Post
 from django.core.cache import cache
-from .factories import post_create, group_create
+from .factories import post_create, group_create, clean_counter
 
 User = get_user_model()
 
@@ -25,6 +25,11 @@ class PostURLTests(TestCase):
         cls.author_user = User.objects.create_user('author')
         cls.group = group_create()
         cls.post = post_create(cls.author_user, cls.group)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        super().tearDownClass()
+        clean_counter()
 
     def setUp(self):
         self.subscriber = Client()
@@ -50,7 +55,6 @@ class PostURLTests(TestCase):
             'posts/create_post.html',
             'posts/follow.html',
         ]
-        cache.clear()
 
     def test_url_available_anonymous_exists_at_desired_location(self):
         """
