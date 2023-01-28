@@ -55,6 +55,7 @@ class PostURLTests(TestCase):
             'posts/create_post.html',
             'posts/follow.html',
         ]
+        cache.clear()
 
     def test_url_available_anonymous_exists_at_desired_location(self):
         """
