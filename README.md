@@ -15,7 +15,7 @@ Yatube - сервис позволяющий Вам создавать и про
 #### 1. Клонировать репозиторий и перейти в него в командной строке:
 
 ```bash
-git clone https://github.com/Aleksandr27041986/Yatube
+git clone https://github.com/Aleksandr27041986/Yatube.git
 ```
 
 ```bash
